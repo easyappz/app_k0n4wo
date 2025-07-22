@@ -18,3 +18,25 @@
 .auth-form-register-now {
   float: right;
 }
+
+.ant-layout-header {
+  padding: 0 50px;
+}
+
+.ant-layout-content {
+  background-color: #fff;
+}
+
+.ant-menu {
+  line-height: 64px;
+}
+
+.ant-card {
+  margin-bottom: 16px;
+}
+
+.ant-table-wrapper {
+  background-color: #fff;
+  padding: 24px;
+  border-radius: 2px;
+}
