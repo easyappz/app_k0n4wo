@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { mongoDb } = require('./db');
 
 const router = express.Router();
 
@@ -15,17 +16,20 @@ const UserSchema = new mongoose.Schema({
   points: { type: Number, default: 0 }
 });
 
-const User = mongoose.model('User', UserSchema);
+const User = mongoDb.model('User', UserSchema);
 
 // Photo Schema
 const PhotoSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   url: { type: String, required: true },
   ratings: [{ userId: mongoose.Schema.Types.ObjectId, rating: Number }],
-  averageRating: { type: Number, default: 0 }
+  averageRating: { type: Number, default: 0 },
+  isActive: { type: Boolean, default: true },
+  gender: { type: String },
+  age: { type: Number }
 });
 
-const Photo = mongoose.model('Photo', PhotoSchema);
+const Photo = mongoDb.model('Photo', PhotoSchema);
 
 // Middleware to verify JWT token
 const verifyToken = (req, res, next) => {
@@ -46,12 +50,10 @@ router.post('/register', async (req, res) => {
   try {
     const { username, password, email, gender, age } = req.body;
 
-    // Validate input
     if (!username || !password || !email) {
       return res.status(400).json({ message: 'Please provide username, password and email' });
     }
 
-    // Check if user already exists
     const existingUser = await User.findOne({ $or: [{ username }, { email }] });
     if (existingUser) {
       return res.status(400).json({ message: 'Username or email already exists' });
@@ -71,7 +73,6 @@ router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    // Validate input
     if (!username || !password) {
       return res.status(400).json({ message: 'Please provide username and password' });
     }
@@ -85,7 +86,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
     const token = jwt.sign({ userId: user._id }, 'your_jwt_secret', { expiresIn: '1h' });
-    res.json({ token });
+    res.json({ token, userId: user._id });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -96,7 +97,6 @@ router.post('/reset-password-request', async (req, res) => {
   try {
     const { email } = req.body;
 
-    // Validate input
     if (!email) {
       return res.status(400).json({ message: 'Please provide an email' });
     }
@@ -106,7 +106,6 @@ router.post('/reset-password-request', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
     // Here you would typically send an email with a reset link
-    // For this example, we'll just return a success message
     res.json({ message: 'Password reset link sent to email' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -119,12 +118,12 @@ router.post('/upload-photo', verifyToken, async (req, res) => {
     const { photoUrl } = req.body;
     const userId = req.user.userId;
 
-    // Validate input
     if (!photoUrl) {
       return res.status(400).json({ message: 'Please provide a photo URL' });
     }
 
-    const photo = new Photo({ userId, url: photoUrl });
+    const user = await User.findById(userId);
+    const photo = new Photo({ userId, url: photoUrl, gender: user.gender, age: user.age });
     await photo.save();
     res.status(201).json({ message: 'Photo uploaded successfully', photoId: photo._id });
   } catch (error) {
@@ -136,14 +135,15 @@ router.post('/upload-photo', verifyToken, async (req, res) => {
 router.get('/photos-for-rating', verifyToken, async (req, res) => {
   try {
     const { gender, minAge, maxAge } = req.query;
-    const userFilter = {};
-    if (gender) userFilter.gender = gender;
-    if (minAge && maxAge) userFilter.age = { $gte: minAge, $lte: maxAge };
+    const userId = req.user.userId;
+    
+    const filter = { isActive: true, userId: { $ne: userId } };
+    if (gender) filter.gender = gender;
+    if (minAge && maxAge) filter.age = { $gte: Number(minAge), $lte: Number(maxAge) };
     
     const photos = await Photo.aggregate([
-      { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' } },
-      { $match: { 'user.0': { $exists: true }, ...userFilter } },
-      { $sample: { size: 10 } }
+      { $match: filter },
+      { $sample: { size: 1 } }
     ]);
     
     res.json(photos);
@@ -158,7 +158,6 @@ router.post('/rate-photo', verifyToken, async (req, res) => {
     const { photoId, rating } = req.body;
     const userId = req.user.userId;
 
-    // Validate input
     if (!photoId || !rating) {
       return res.status(400).json({ message: 'Please provide photoId and rating' });
     }
@@ -174,6 +173,7 @@ router.post('/rate-photo', verifyToken, async (req, res) => {
     
     // Update user points
     await User.findByIdAndUpdate(userId, { $inc: { points: 1 } });
+    await User.findByIdAndUpdate(photo.userId, { $inc: { points: -1 } });
     
     res.json({ message: 'Photo rated successfully', newAverageRating: photo.averageRating });
   } catch (error) {
@@ -190,6 +190,64 @@ router.get('/user-points', verifyToken, async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
     res.json({ points: user.points });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Toggle Photo Active Status (protected route)
+router.post('/toggle-photo-status', verifyToken, async (req, res) => {
+  try {
+    const { photoId } = req.body;
+    const userId = req.user.userId;
+
+    if (!photoId) {
+      return res.status(400).json({ message: 'Please provide photoId' });
+    }
+
+    const user = await User.findById(userId);
+    if (user.points <= 0) {
+      return res.status(400).json({ message: 'Not enough points to toggle photo status' });
+    }
+
+    const photo = await Photo.findOne({ _id: photoId, userId });
+    if (!photo) {
+      return res.status(404).json({ message: 'Photo not found or not owned by user' });
+    }
+
+    photo.isActive = !photo.isActive;
+    await photo.save();
+
+    res.json({ message: 'Photo status toggled successfully', isActive: photo.isActive });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get User Photos with Stats (protected route)
+router.get('/user-photos', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const photos = await Photo.find({ userId });
+    
+    const photosWithStats = photos.map(photo => ({
+      id: photo._id,
+      url: photo.url,
+      averageRating: photo.averageRating,
+      totalRatings: photo.ratings.length,
+      isActive: photo.isActive,
+      genderStats: photo.ratings.reduce((acc, curr) => {
+        acc[curr.gender] = (acc[curr.gender] || 0) + 1;
+        return acc;
+      }, {}),
+      ageStats: photo.ratings.reduce((acc, curr) => {
+        acc.total += curr.age;
+        acc.count += 1;
+        return acc;
+      }, { total: 0, count: 0 })
+    }));
+
+    res.json(photosWithStats);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
