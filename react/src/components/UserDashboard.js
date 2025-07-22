@@ -28,7 +28,7 @@ const UserDashboard = () => {
       <Card>
         <Text strong>Баллы: {points}</Text>
       </Card>
-      <Title level={3}>Мои фотографваши фотографии</Title>
+      <Title level={3}>Мои фотографии</Title>
       <List
         grid={{ gutter: 16, column: 3 }}
         dataSource={photos}
@@ -40,7 +40,6 @@ const UserDashboard = () => {
                 <Button
                   onClick={() => togglePhotoStatus(photo.id)}
                   disabled={!photo.isActive && points < 10}
-}
                 >
                   {photo.isActive ? 'Деактивировать' : 'Активировать'}
                 </Button>
@@ -50,7 +49,7 @@ const UserDashboard = () => {
                 title={`Средняя оценка: ${photo.averageRating.toFixed(2)}`}
                 description={`Всего оценок: ${photo.totalRatings}`}
               />
-            </<Text>{photo.isActive ? 'Активна' : 'Неактивна'}</Text>
+              <Text>{photo.isActive ? 'Активна' : 'Неактивна'}</Text>
             </Card>
           </List.Item>
         )}
