@@ -1,27 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Rate, Button, Select, InputNumber, message } from 'antd';
-import instance from '../api/axios';
-
-const { Option } = Select;
+import { Card, Rate, Button, message } from 'antd';
+import { instance } from '../api/axios';
+import { useUser } from '../context/UserContext';
 
 const RatePhoto = () => {
   const [photo, setPhoto] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [gender, setGender] = useState('');
-  const [minAge, setMinAge] = useState(null);
-  const [maxAge, setMaxAge] = useState(null);
+  const [rating, setRating] = useState(0);
+  const { updatePoints } = useUser();
 
   const fetchPhoto = async () => {
-    setLoading(true);
     try {
-      const response = await instance.get('/api/photos-for-rating', {
-        params: { gender, minAge, maxAge }
-      });
+      const response = await instance.get('/api/photos-for-rating');
       setPhoto(response.data[0]);
     } catch (error) {
-      message.error('Ошибка при загрузке фотографии');
-    } finally {
-      setLoading(false);
+      message.error('Ошибка при получении фото для��узке фото для оценки');
     }
   };
 
@@ -29,50 +21,42 @@ const RatePhoto = () => {
     fetchPhoto();
   }, []);
 
-  const handleRate = async (value) => {
+  const handleRate = async () => {
+    if (rating === 0) {
+      message.warning('Пожалуйста, выберите оценку');
+      return;
+    }
+
     try {
-      await instance.post('/api/rate-photo', { photoId: photo._id, rating: value });
-      message.success('Оценка сохранена');
+      await instance.post('/api/rate-photo', {
+        photoId: photo._id,
+        rating: rating
+      });
+      message.success('Фото успешно оценено');
+      setRating(0);
       fetchPhoto();
+      updatePoints();
     } catch (error) {
-      message.error('Ошибка при сохранении оценки');
+      message.error('Ошибка при оценке фото');
     }
   };
 
+  if (!photo) {
+    return <div>Загрузка фото...</div>;
+  }
+
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <Select
-          style={{ width: 120, marginRight: 8 }}
-          placeholder="Пол"
-          onChange={setGender}
-        >
-          <Option value="male">Мужской</Option>
-          <Option value="female">Женский</Option>
-          <Option value="other">Другой</Option>
-        </Select>
-        <InputNumber
-          style={{ marginRight: 8 }}
-          placeholder="Мин. возраст"
-          onChange={setMinAge}
-        />
-        <InputNumber
-          style={{ marginRight: 8 }}
-          placeholder="Макс. возраст"
-          onChange={setMaxAge}
-        />
-        <Button onClick={fetchPhoto}>Применить фильтры</Button>
-      </div>
-      {photo ? (
-        <Card
-          cover={<img alt="photo" src={photo.url} />}
-          actions={[<Rate onChange={handleRate} />]}
-        >
-          <Card.Meta title={`Возраст: ${photo.age}`} description={`Пол: ${photo.gender}`} />
-        </Card>
-      ) : (
-        <p>Нет доступных фотографий для оценки</p>
-      )}
+      <h2>Оценка фото</h2>
+      <Card
+        cover={<img alt="photo" src={photo.url} />}
+        actions={[
+          <Rate allowHalf value={rating} onChange={setRating} />,
+          <Button onClick={handleRate}>Оценить</Button>
+        ]}
+      >
+        <Card.Meta description={`Возраст: ${photo.age}, Пол: ${photo.gender}`} />
+      </Card>
     </div>
   );
 };

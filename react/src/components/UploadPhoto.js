@@ -1,39 +1,67 @@
 import React, { useState } from 'react';
-import { Form, Input, Button, message } from 'antd';
-import instance from '../api/axios';
+import { Upload, message, Button } from 'antd';
+import { UploadOutlined } from '@ant-design/icons';
+import { instance } from '../api/axios';
+import { useUser } from '../context/UserContext';
 
 const UploadPhoto = () => {
-  const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
+  const [fileList, setFileList] = useState([]);
+  const { points, updatePoints, updatePhotos } = useUser();
 
-  const onFinish = async (values) => {
-    setLoading(true);
+  const handleUpload = async () => {
+    if (points < 100) {
+      message.error('Недостаточно баллов для загрузки фото. Требуется 100 баллов.');
+      return;
+    }
+
+    const formData = new FormData();
+    fileList.forEach(file => {
+      formData.append('photos', file);
+    });
+
     try {
-      await instance.post('/api/upload-photo', { photoUrl: values.photoUrl });
-      message.success('Фотография успешно загружена');
-      form.resetFields();
+      await instance.post('/api/upload-photo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      message.success('Фото успешно загружено');
+      setFileList([]);
+      updatePoints();
+      updatePhotos();
     } catch (error) {
-      message.error('Ошибка при загрузке фотографии');
-    } finally {
-      setLoading(false);
+      message.error('Ошибка при загрузке фото');
     }
   };
 
+  const props = {
+    onRemove: file => {
+      const index = fileList.indexOf(file);
+      const newFileList = fileList.slice();
+      newFileList.splice(index, 1);
+      setFileList(newFileList);
+    },
+    beforeUpload: file => {
+      setFileList([...fileList, file]);
+      return false;
+    },
+    fileList,
+  };
+
   return (
-    <Form form={form} onFinish={onFinish} layout="vertical">
-      <Form.Item
-        name="photoUrl"
-        label="URL фотографии"
-        rules={[{ required: true, message: 'Пожалуйста, введите URL фотографии' }]}
+    <div>
+      <h2>Загрузка фото</h2>
+      <p>Доступные баллы: {points}</p>
+      <Upload {...props}>
+        <Button icon={<UploadOutlined />}>Выбрать фото</Button>
+      </Upload>
+      <Button
+        type="primary"
+        onClick={handleUpload}
+        disabled={fileList.length === 0 || points < 100}
+        style={{ marginTop: 16 }}
       >
-        <Input />
-      </Form.Item>
-      <Form.Item>
-        <Button type="primary" htmlType="submit" loading={loading}>
-          Загрузить фотографию
-        </Button>
-      </Form.Item>
-    </Form>
+        Загрузить
+      </Button>
+    </div>
   );
 };
 
