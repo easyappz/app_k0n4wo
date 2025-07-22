@@ -27,10 +27,36 @@ const PhotoSchema = new mongoose.Schema({
 
 const Photo = mongoose.model('Photo', PhotoSchema);
 
+// Middleware to verify JWT token
+const verifyToken = (req, res, next) => {
+  const token = req.header('Authorization');
+  if (!token) return res.status(401).json({ message: 'Access denied' });
+
+  try {
+    const verified = jwt.verify(token, 'your_jwt_secret');
+    req.user = verified;
+    next();
+  } catch (error) {
+    res.status(400).json({ message: 'Invalid token' });
+  }
+};
+
 // Registration
 router.post('/register', async (req, res) => {
   try {
     const { username, password, email, gender, age } = req.body;
+
+    // Validate input
+    if (!username || !password || !email) {
+      return res.status(400).json({ message: 'Please provide username, password and email' });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Username or email already exists' });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = new User({ username, password: hashedPassword, email, gender, age });
     await user.save();
@@ -44,6 +70,12 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+
+    // Validate input
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Please provide username and password' });
+    }
+
     const user = await User.findOne({ username });
     if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
@@ -63,6 +95,12 @@ router.post('/login', async (req, res) => {
 router.post('/reset-password-request', async (req, res) => {
   try {
     const { email } = req.body;
+
+    // Validate input
+    if (!email) {
+      return res.status(400).json({ message: 'Please provide an email' });
+    }
+
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -75,10 +113,17 @@ router.post('/reset-password-request', async (req, res) => {
   }
 });
 
-// Upload Photo
-router.post('/upload-photo', async (req, res) => {
+// Upload Photo (protected route)
+router.post('/upload-photo', verifyToken, async (req, res) => {
   try {
-    const { userId, photoUrl } = req.body;
+    const { photoUrl } = req.body;
+    const userId = req.user.userId;
+
+    // Validate input
+    if (!photoUrl) {
+      return res.status(400).json({ message: 'Please provide a photo URL' });
+    }
+
     const photo = new Photo({ userId, url: photoUrl });
     await photo.save();
     res.status(201).json({ message: 'Photo uploaded successfully', photoId: photo._id });
@@ -87,10 +132,10 @@ router.post('/upload-photo', async (req, res) => {
   }
 });
 
-// Get Photos for Rating
-router.get('/photos-for-rating', async (req, res) => {
+// Get Photos for Rating (protected route)
+router.get('/photos-for-rating', verifyToken, async (req, res) => {
   try {
-    const { userId, gender, minAge, maxAge } = req.query;
+    const { gender, minAge, maxAge } = req.query;
     const userFilter = {};
     if (gender) userFilter.gender = gender;
     if (minAge && maxAge) userFilter.age = { $gte: minAge, $lte: maxAge };
@@ -107,10 +152,17 @@ router.get('/photos-for-rating', async (req, res) => {
   }
 });
 
-// Rate Photo
-router.post('/rate-photo', async (req, res) => {
+// Rate Photo (protected route)
+router.post('/rate-photo', verifyToken, async (req, res) => {
   try {
-    const { userId, photoId, rating } = req.body;
+    const { photoId, rating } = req.body;
+    const userId = req.user.userId;
+
+    // Validate input
+    if (!photoId || !rating) {
+      return res.status(400).json({ message: 'Please provide photoId and rating' });
+    }
+
     const photo = await Photo.findById(photoId);
     if (!photo) {
       return res.status(404).json({ message: 'Photo not found' });
@@ -129,10 +181,11 @@ router.post('/rate-photo', async (req, res) => {
   }
 });
 
-// Get User Points
-router.get('/user-points/:userId', async (req, res) => {
+// Get User Points (protected route)
+router.get('/user-points', verifyToken, async (req, res) => {
   try {
-    const user = await User.findById(req.params.userId);
+    const userId = req.user.userId;
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
